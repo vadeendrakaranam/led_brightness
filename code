@@ -1,0 +1,72 @@
+import network
+import socket
+from machine import Pin, PWM
+
+# Connect to Wi-Fi
+ssid = 'your_SSID'
+password = 'your_PASSWORD'
+
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(ssid, password)
+
+while not wlan.isconnected():
+    pass
+
+# Print the IP address
+ip_address = wlan.ifconfig()[0]
+print('Connected to Wi-Fi. IP Address:', ip_address)
+
+# Initialize GPIO pin for PWM control
+led = PWM(Pin(1), freq=1000)
+
+# Default to LED OFF
+led.duty_u16(0)
+
+# Web server setup
+addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
+s = socket.socket()
+s.bind(addr)
+s.listen(1)
+
+def web_page():
+    brightness = led.duty_u16()
+    brightness_percent = (brightness / 65535) * 100
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <title>LIGHT BRIGHTNESS CONTROL</title>
+</head>
+<body>
+    <h1>LED Brightness Control</h1>
+    <p><a href="/on">TURN ON</a></p>
+    <p><a href="/off">TURN OFF</a></p>
+    <p><a href="/low">LOW</a></p>
+    <p><a href="/medium">MEDIUM</a></p>
+    <p><a href="/high">HIGH</a></p>
+    <p>Current Brightness: {}%</p>
+    <p>IP Address: {}</p>
+</body>
+</html>""".format(int(brightness_percent), ip_address)
+    return html
+
+while True:
+    conn, addr = s.accept()
+    request = conn.recv(1024).decode()
+    
+    if '/on' in request:
+        if led.duty_u16() == 0:
+            led.duty_u16(32768)  # Medium brightness by default when turning on
+    if '/off' in request:
+        led.duty_u16(0)  # Turn off LED
+    if '/low' in request:
+        led.duty_u16(16384)  # Low brightness
+    if '/medium' in request:
+        led.duty_u16(32768)  # Medium brightness
+    if '/high' in request:
+        led.duty_u16(65535)  # High brightness
+    
+    response = web_page()
+    conn.send('HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n')
+    conn.sendall(response)
+    conn.close()
